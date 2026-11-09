@@ -1,5 +1,7 @@
 use super::*;
 
+#[path = "multi_agents_redelivery_repro_tests.rs"]
+mod redelivery_repro_tests;
 #[path = "multi_agents_source_identity_route_tests.rs"]
 mod source_identity_route_tests;
 use crate::StartThreadOptions;
