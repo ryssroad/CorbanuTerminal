@@ -3,6 +3,7 @@
 //! reloaded by `send_message`; mailbox recovery may hand it the interrupted first
 //! message again, which starts a turn.
 use super::*;
+use pretty_assertions::assert_eq;
 
 const FIRST: &str = "dec1109d boot worker";
 
