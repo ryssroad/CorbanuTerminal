@@ -19,6 +19,40 @@ fn first_message_deliveries(manager: &ThreadManager, agent_id: ThreadId) -> usiz
         .count()
 }
 
+fn describe_rows(rows: &[codex_state::AgentMailboxMessage]) -> Vec<String> {
+    rows.iter()
+        .map(|row| {
+            format!(
+                "{:?}/trigger={}/{:?}",
+                row.phase,
+                row.communication.trigger_turn,
+                row.communication
+                    .content
+                    .chars()
+                    .take(40)
+                    .collect::<String>()
+            )
+        })
+        .collect()
+}
+
+fn describe_ops(manager: &ThreadManager, agent_id: ThreadId, skip: usize) -> Vec<String> {
+    manager
+        .captured_ops()
+        .into_iter()
+        .filter(|(thread_id, _)| *thread_id == agent_id)
+        .skip(skip)
+        .map(|(_, op)| match op {
+            Op::InterAgentCommunication { communication } => format!(
+                "IAC(trigger={}, {:?})",
+                communication.trigger_turn,
+                communication.content.chars().take(40).collect::<String>()
+            ),
+            other => format!("{other:?}").chars().take(60).collect(),
+        })
+        .collect()
+}
+
 #[tokio::test]
 async fn dec1109d_reload_redelivers_an_interrupted_first_message() {
     let (mut session, mut turn) = make_session_and_context().await;
@@ -87,11 +121,23 @@ async fn dec1109d_reload_redelivers_an_interrupted_first_message() {
             .find(|row| row.communication.content.contains(FIRST))
             .map(|row| (row.phase, row.attempt_id))
     };
-    let after_interrupt = phase_of_first(
-        state_db
-            .list_recoverable_agent_messages(agent_id)
-            .await
-            .expect("mailbox rows"),
+    let rows_after_interrupt = state_db
+        .list_recoverable_agent_messages(agent_id)
+        .await
+        .expect("mailbox rows");
+    eprintln!(
+        "DEC1109D rows_after_interrupt={:?}",
+        describe_rows(&rows_after_interrupt)
+    );
+    let after_interrupt = phase_of_first(rows_after_interrupt);
+    let ops_before_reload = manager
+        .captured_ops()
+        .into_iter()
+        .filter(|(thread_id, _)| *thread_id == agent_id)
+        .count();
+    eprintln!(
+        "DEC1109D ops_before_reload={:?}",
+        describe_ops(&manager, agent_id, 0)
     );
     let deliveries_before_reload = first_message_deliveries(&manager, agent_id);
 
@@ -120,7 +166,21 @@ async fn dec1109d_reload_redelivers_an_interrupted_first_message() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     let redelivered = first_message_deliveries(&manager, agent_id) - deliveries_before_reload;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
     let status_after_reload = manager.agent_control().get_status(agent_id).await;
+    eprintln!(
+        "DEC1109D ops_after_reload={:?}",
+        describe_ops(&manager, agent_id, ops_before_reload)
+    );
+    eprintln!(
+        "DEC1109D rows_after_reload={:?}",
+        describe_rows(
+            &state_db
+                .list_recoverable_agent_messages(agent_id)
+                .await
+                .expect("mailbox rows")
+        )
+    );
     eprintln!(
         "DEC1109D interrupt_previous={:?} settled={settled:?} first_row_after_interrupt={after_interrupt:?} redelivered={redelivered} status_after_reload={status_after_reload:?}",
         interrupted.previous_status
